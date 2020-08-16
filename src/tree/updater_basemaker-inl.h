@@ -249,12 +249,13 @@ class BaseMaker: public TreeUpdater {
   inline void CorrectNonDefaultPositionByBatch(
       const SparsePage &batch, const std::vector<bst_uint> &sorted_split_set,
       const RegTree &tree) {
-    for (size_t fid = 0; fid < batch.Size(); ++fid) {
+    for (size_t fid = 0; fid < batch.Size(); ++fid) { // Iterate over features in batch
       auto col = batch[fid];
       auto it = std::lower_bound(sorted_split_set.begin(), sorted_split_set.end(), fid);
 
       if (it != sorted_split_set.end() && *it == fid) {
         const auto ndata = static_cast<bst_omp_uint>(col.size());
+        std::cout << "CorrectNonDefaultPositionByBatch: Iterating over " << ndata << " samples, for feature " << fid << std::endl;
         #pragma omp parallel for schedule(static)
         for (bst_omp_uint j = 0; j < ndata; ++j) {
           const bst_uint ridx = col[j].index;

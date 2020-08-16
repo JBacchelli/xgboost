@@ -337,6 +337,7 @@ struct XGBOOST_ALIGNAS(16) GradStats {
   GradType sum_grad { 0 };
   /*! \brief sum hessian statistics */
   GradType sum_hess { 0 };
+  //GradType useless_sum_of_product { 0 };
 
  public:
   XGBOOST_DEVICE GradType GetGrad() const { return sum_grad; }
@@ -367,6 +368,8 @@ struct XGBOOST_ALIGNAS(16) GradStats {
   inline void Add(const GradStats& b) {
     sum_grad += b.sum_grad;
     sum_hess += b.sum_hess;
+    // Checked adding this and aligning as 24 bytes, but performance remains the same
+    //useless_sum_of_product += b.sum_grad*b.sum_hess;
   }
   /*! \brief same as add, reduce is used in All Reduce */
   inline static void Reduce(GradStats& a, const GradStats& b) { // NOLINT(*)

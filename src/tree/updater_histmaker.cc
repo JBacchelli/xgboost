@@ -16,6 +16,7 @@
 #include "../common/group_data.h"
 #include "./updater_basemaker-inl.h"
 #include "constraints.h"
+#include "../common/timer.h"
 
 namespace xgboost {
 namespace tree {
@@ -121,16 +122,32 @@ class HistMaker: public BaseMaker {
     // mark root node as fresh.
     (*p_tree)[0].SetLeaf(0.0f, 0);
 
+    common::Monitor monitor_;
+    monitor_.Init("HistMaker");
     for (int depth = 0; depth < param_.max_depth; ++depth) {
       // reset and propose candidate split
+      monitor_.Start("ResetPosAndPropose");
       this->ResetPosAndPropose(gpair, p_fmat, selected_features_, *p_tree);
+      monitor_.Stop("ResetPosAndPropose");
       // create histogram
+      monitor_.Start("CreateHist");
       this->CreateHist(gpair, p_fmat, selected_features_, *p_tree);
+      monitor_.Stop("CreateHist");
       // find split based on histogram statistics
+      monitor_.Start("FindSplit");
       this->FindSplit(depth, gpair, p_fmat, selected_features_, p_tree);
+      monitor_.Stop("FindSplit");
       // reset position after split
+      monitor_.Start("ResetPositionAfterSplit");
       this->ResetPositionAfterSplit(p_fmat, *p_tree);
+      monitor_.Stop("ResetPositionAfterSplit");
+      monitor_.Start("UpdateQueueExpand");
       this->UpdateQueueExpand(*p_tree);
+      monitor_.Stop("UpdateQueueExpand");
+      std::cout << "Tree update info at depth: " << depth << "\n";
+      monitor_.Print(); // Print info at each round
+      // TODO: print monitor statistics here to see time spent in each function
+      //       at each iteration
       // if nothing left to be expand, break
       if (qexpand_.size() == 0) break;
     }
@@ -495,6 +512,7 @@ class CQHistMaker: public HistMaker {
                             bst_uint fid_offset,
                             std::vector<HistEntry> *p_temp) {
     if (col.size() == 0) return;
+    std::cout << "UpdateHistCol: Updating histogram column by iterating over " << col.size() << " samples." << std::endl;
     // initialize sbuilder for use
     std::vector<HistEntry> &hbuilder = *p_temp;
     hbuilder.resize(tree.param.num_nodes);
@@ -658,6 +676,18 @@ class GlobalProposalHistMaker: public CQHistMaker {
       CQHistMaker::ResetPosAndPropose(gpair, p_fmat, fset, tree);
       cached_rptr_ = this->wspace_.rptr;
       cached_cut_ = this->wspace_.cut;
+      // Printing global proposal
+      std::cout << "\n\tGlobal proposal of thresholds:\n"
+        << "\t\tcached unit pointer: ";
+      for(size_t i=0; i<cached_rptr_.size(); ++i){
+        std::cout << cached_rptr_[i] << " ";
+      }
+      std::cout << "\n\t\tcached cut value: ";
+      for(size_t i=0; i<cached_cut_.size(); ++i){
+        std::cout << cached_cut_[i] << " ";
+      }
+      std::cout << std::endl;
+      //--------------------------
     } else {
       this->wspace_.cut.clear();
       this->wspace_.rptr.clear();
@@ -680,6 +710,8 @@ class GlobalProposalHistMaker: public CQHistMaker {
                   DMatrix *p_fmat,
                   const std::vector<bst_feature_t> &fset,
                   const RegTree &tree) override {
+    static common::Monitor monitor_;
+    monitor_.Init("positionsMonitor");
     const MetaInfo &info = p_fmat->Info();
     // fill in reverse map
     this->feat2workindex_.resize(tree.param.num_feature);
@@ -695,7 +727,9 @@ class GlobalProposalHistMaker: public CQHistMaker {
       this->thread_hist_.resize(omp_get_max_threads());
 
       // TWOPASS: use the real set + split set in the column iteration.
+      monitor_.Start("setDefaultPositions");
       this->SetDefaultPostion(p_fmat, tree);
+      monitor_.Stop("setDefaultPositions");
       this->work_set_.insert(this->work_set_.end(), this->fsplit_set_.begin(),
                              this->fsplit_set_.end());
       XGBOOST_PARALLEL_SORT(this->work_set_.begin(), this->work_set_.end(),
@@ -705,8 +739,10 @@ class GlobalProposalHistMaker: public CQHistMaker {
 
       // start accumulating statistics
       for (const auto &batch : p_fmat->GetBatches<SortedCSCPage>()) {
+        monitor_.Start("correctPositions");
         // TWOPASS: use the real set + split set in the column iteration.
         this->CorrectNonDefaultPositionByBatch(batch, this->fsplit_set_, tree);
+        monitor_.Stop("correctPositions");
 
         // start enumeration
         const auto nsize = static_cast<bst_omp_uint>(this->work_set_.size());
