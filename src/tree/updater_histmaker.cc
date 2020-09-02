@@ -17,6 +17,7 @@
 #include "./updater_basemaker-inl.h"
 #include "constraints.h"
 #include "../common/timer.h"
+#include <chrono>
 
 namespace xgboost {
 namespace tree {
@@ -513,6 +514,7 @@ class CQHistMaker: public HistMaker {
                             std::vector<HistEntry> *p_temp) {
     if (col.size() == 0) return;
     std::cout << "UpdateHistCol: Updating histogram column by iterating over " << col.size() << " samples." << std::endl;
+    int64_t startLoading = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     // initialize sbuilder for use
     std::vector<HistEntry> &hbuilder = *p_temp;
     hbuilder.resize(tree.param.num_nodes);
@@ -555,6 +557,8 @@ class CQHistMaker: public HistMaker {
         }
       }
     }
+    int64_t loadTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()-startLoading;
+    std::cout << "Done in " << loadTime << "ms" << std::endl;
   }
   inline void UpdateSketchCol(const std::vector<GradientPair> &gpair,
                               const SparsePage::Inst &col,
